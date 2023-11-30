@@ -34,6 +34,7 @@ def main_bundle_adjust():
     image_labels_subsampling_factor = 5.
     depth_scaling_factor = 1.
     num_samples = 10
+    data_dump_dir = "../data/batch_test/"
 
     # Just get the initialized extrinsics from the projection of the first kitti sample
     _, _, init_extrinsics, _ = get_initialized_input(
@@ -108,7 +109,7 @@ def main_bundle_adjust():
                     image[gt_points[:, 1].int(), gt_points[:, 0].int(), :] = np.array(gt_color)
 
         # Dump the image
-        cv2.imwrite(f'../data/batch_test/iteration_{iteration}.png', image[:, :, ::-1])
+        cv2.imwrite(f'{data_dump_dir}/iteration_{iteration}.png', image[:, :, ::-1])
 
         # Downscale the value for numerical stability and average them per sample
         total_chamdist = total_chamdist / DOWNSCALING_FACTOR / num_samples

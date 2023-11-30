@@ -4,17 +4,12 @@ from dataclasses import dataclass
 from typing import Optional, Any, Dict
 
 import cv2
-import joblib as joblib
 import numpy as np
 import matplotlib
-import matplotlib.pyplot as plt
 import torch
 import yaml
 from pytorch3d.loss import chamfer_distance
 from scipy.spatial.transform import Rotation
-from torch import nn
-from torch.nn import Parameter
-from torch.utils.data import Dataset
 
 from utils import LabelConfig
 
@@ -55,11 +50,10 @@ class CalibInput:
         return CalibInput(label_map=label_map, pts_2d_fov=pts_2d_fov, label_fov=label_fov, tr=tr)
 
 
-
 class Kitti:
     def __init__(self,
                  sequence: str = '00',
-                 data_root: str = '/home/sergi/Kitti/dataset'):
+                 data_root: str = '../data//Kitti/dataset'):
         self.sequence = sequence
         self.data_root = data_root
 
@@ -311,7 +305,7 @@ def get_initialized_input(kitti, idx, camera_id=2, num_iter: int = 1, rotation_d
 
     np.save(f'../data/init_image_points.npy', init_pred_pts_2d_fov)
     np.save(f'../data/init_label_points.npy', init_pred_pts_label_fov)
-    np.save(f'../data/init_extrinsics.npy', init_extrinsics)
+    np.save(f'../data_old/init_extrinsics.npy', init_extrinsics)
     np.save(f'../data/init_lidar.npy', lidar_data)
 
     return init_pred_pts_2d_fov, init_pred_pts_label_fov, init_extrinsics, lidar_data

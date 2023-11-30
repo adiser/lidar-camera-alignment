@@ -23,7 +23,7 @@ class LabelConfig:
         'sidewalk': 48
     }
 
-    data_source = '../data/semantic-kitti.yaml'
+    data_source = '../data/Kitti/dataset/semantic-kitti.yaml'
     yaml_dict = yaml.safe_load(open(data_source))
 
     @classmethod
