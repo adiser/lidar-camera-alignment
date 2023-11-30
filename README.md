@@ -19,19 +19,19 @@ seamlessly
 
 ## Set up experiment dir.
 
-1. `mkdir /path/to/semalign/data/batch_test`
+1. `mkdir /path/to/lidar-camera-alignment/data/batch_test`
 2. This will be the path where the experiment results will be saved (visualization and logging mostly)
 
 ## Download data from KITTI
 
 1. Download the zip files from https://www.cvlibs.net/datasets/kitti/eval_odometry.php
 2. We are only working with sequence 00 of the KITTI dataset.
-3. Unzip it to `path/to/semalign/data/labels`
+3. Unzip it to `path/to/lidar-camera-alignment/data/labels`
 
 ## Get the labels
 
 1. Get it from https://drive.google.com/file/d/1DLJtCda9fjfWkGyhORbWo0uCAWQcfwgV/view?usp=sharing
-2. Unzip it to `path/to/semalign/data/labels`
+2. Unzip it to `path/to/lidar-camera-alignment/data/labels`
 
 # Run experiments
 
@@ -52,7 +52,26 @@ seamlessly
 ## Run the optimization algorithm.
 
 ```shell
-cd /path/to/semalign/src
+cd /path/to/lidar-camera-alignment/src
 python main.py
 ```
 
+# Backlog
+
+## Features
+1. Addition of point level lidar labels.
+2. GPU optimization.
+3. Adding more geometric priors.
+
+## Experiments
+1. The effect of the number of batches for the optimization profile 
+2. The effect of the diversity of the batch for a single optimization update
+3. The effect of rotation parameterization in the optimization profile
+4. The effect of learning rate in the optimization profile
+5. How sensitive is the model towards bad initial guesses
+6. The effect of using depth if any.
+
+# Expected academic contribution:
+1. Addition of depth
+2. Addition of batch optimization
+3. Addition of efficient image label processing.
