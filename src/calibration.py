@@ -118,12 +118,15 @@ class Kitti:
     def get_rotated_projection(self,
                                idx: int,
                                camera_id: int = 2,
-                               rotation_degrees=None):
+                               rotation_degrees=None,
+                               translation_meters=None):
         if rotation_degrees is None:
             rotation_degrees = dict(z=10, y=5, x=5)
+        if translation_meters is None:
+            translation_meters = dict(z=10, y=5, x=5)
 
         assert rotation_degrees is not None
-        return self.project_semlabels(idx, camera_id, rotation_degrees)
+        return self.project_semlabels(idx, camera_id, rotation_degrees, translation_meters=translation_meters)
 
     def get_depth(self, idx, camera_id: int = 2, min_depth=1.0, max_depth=50., depth_scaling_factor=20):
         depth_folder = os.path.join(self.sequence_folder, f'image_{camera_id}')
@@ -206,7 +209,11 @@ class Kitti:
 
         return gt_labels_positions_dict
 
-    def project_semlabels(self, idx: int, camera_id: int = 2, rotation_degrees: Optional[Dict[str, Any]] = None):
+    def project_semlabels(self,
+                          idx: int,
+                          camera_id: int = 2,
+                          rotation_degrees: Optional[Dict[str, Any]] = None,
+                          translation_meters: Optional[Dict[str, Any]] = None):
         assert camera_id in [0, 1, 2, 3]
 
         lidar_data: np.ndarray = self.load_lidar_points(idx)
@@ -219,12 +226,25 @@ class Kitti:
             # ROLL      YAW       PITCH
             z_degrees, y_degrees, x_degrees = rotation_degrees['z'], rotation_degrees['y'], rotation_degrees['x']
             rotation = Rotation.from_euler('zyx', np.squeeze(np.array([z_degrees, y_degrees, x_degrees])), degrees=True)
-            random_tf_matrix = rotation.as_matrix()
+            random_rotation_matrix = rotation.as_matrix()
         else:
-            random_tf_matrix = np.eye(3)
+            random_rotation_matrix = np.eye(3)
 
+        if translation_meters is not None:
+            z, y, x = translation_meters['z'], translation_meters['y'], translation_meters['x']
+            random_translation = np.array([x, y, z])
+        else:
+            random_translation = np.zeros(3, dtype=float)
+
+        # Don't modify the master variable.
         tr = self.tr.copy()
-        tr[:, :3] = random_tf_matrix @ tr[:, :3]
+
+        # Apply rotation
+        tr[:, :3] = random_rotation_matrix @ tr[:, :3]
+
+        # Apply translation
+        tr[:, 3] = tr[:, 3] + random_translation
+
         pts_2d = self.project_lidar_to_image_coordinates(lidar_data, camera_id, tr)
         fov_inds = (pts_2d[:, 0] < width - 1) & (pts_2d[:, 0] >= 0) & \
                    (pts_2d[:, 1] < height - 1) & (pts_2d[:, 1] >= 0)
