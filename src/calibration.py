@@ -53,7 +53,7 @@ class CalibInput:
 class Kitti:
     def __init__(self,
                  sequence: str = '00',
-                 data_root: str = '../data//Kitti/dataset'):
+                 data_root: str = '../data/Kitti/dataset'):
         self.sequence = sequence
         self.data_root = data_root
 

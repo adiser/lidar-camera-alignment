@@ -59,9 +59,16 @@ python main.py
 # Backlog
 
 ## Features
-1. Addition of point level lidar labels.
-2. GPU optimization.
-3. Adding more geometric priors.
+- Loss logging. @Sergi
+- Convergence criteria @Sergi
+- Add and test translation parameterization @Sergi
+- Experiment with different transformations (4x4) @Dhanesh
+- Addition of point level lidar labels. @Hari
+- Adding more geometric priors (unprojection) @Dhanesh @Hari
+- Explore more robust label processing more (use confidence scores or) @Shreyas @Hari
+
+Stretch goals
+- Blooming of image seglabels. @Sergi
 
 ## Experiments
 1. The effect of the number of batches for the optimization profile 

@@ -62,6 +62,9 @@ def main_bundle_adjust():
         kitti.load_image(idx=i, camera_id=camera_id) for i in range(num_samples)
     ]
 
+
+
+
     for iteration in range(num_iter):
 
         total_chamdist = 0
