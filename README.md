@@ -59,9 +59,10 @@ python main.py
 # Backlog
 
 ## Features
-- Loss logging. @Sergi
-- Convergence criteria @Sergi
-- Add and test translation parameterization @Sergi
+- ~~Loss logging. @Sergi~~
+- ~~Convergence criteria @Sergi~~
+- ~~Add and test translation parameterization @Sergi~~
+- Bag loss to a file 
 - Experiment with different transformations (4x4) @Dhanesh
 - Addition of point level lidar labels. @Hari
 - Adding more geometric priors (unprojection) @Dhanesh @Hari
