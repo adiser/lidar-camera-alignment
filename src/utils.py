@@ -23,7 +23,6 @@ class LabelConfig:
     #     (71, 1192),
     # ]
 
-    #
 
     LABEL_MAP = {
         'car': 10,

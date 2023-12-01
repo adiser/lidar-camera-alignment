@@ -51,9 +51,9 @@ def main_bundle_adjust():
 
     # Convergence stuff
     convergence_criteria_frame_id = 525
-    patience = 4
+    patience = 50
+    min_delta = 0.01
     convergence_threshold = 0.01
-    min_delta = 0.001
 
     early_stopper = EarlyStopper(patience=patience, min_delta=min_delta, convergence_threshold=convergence_threshold)
 
@@ -184,10 +184,6 @@ def main_bundle_adjust():
         # Get the error
         pred_extrinsics = calibrator_model.construct_extrinsics_matrix()
         delta_rotation_euler = get_error(pred_extrinsics=pred_extrinsics, gt_extrinsics=gt_extrinsics)
-
-        if loss.item() < 20:
-            calibrator_model = get_model(init_extrinsics=pred_extrinsics, rot_param_type='quaternion')
-            optimizer = torch.optim.SGD(calibrator_model.parameters(), lr=1e-6)
 
         # Infer in convergence criteria frame.
         error_criteria, converged = convergence_criteria(calibrator_model=calibrator_model,
