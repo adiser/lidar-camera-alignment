@@ -159,8 +159,12 @@ class Kitti:
         gt_3d_positions_dict = dict()
         gt_labels_positions_dict = dict()
         for label, label_id in label_map.items():
+
             label_img_file = os.path.join(image_semlabel_dir, label, f'{str(idx).zfill(6)}.png')
-            label_img = cv2.imread(label_img_file)
+            if os.path.exists(label_img_file):
+                label_img = cv2.imread(label_img_file)
+            else:
+                label_img = np.zeros((depth_image.shape[0], depth_image.shape[1], 3), dtype=np.uint8)
 
             subsampled_height = int(round(label_img.shape[0] / subsampling_factor))
             subsampled_width = int(round(label_img.shape[1] / subsampling_factor))
