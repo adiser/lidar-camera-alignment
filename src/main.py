@@ -11,6 +11,10 @@ from calibration import Kitti
 from utils import LabelConfig, DOWNSCALING_FACTOR, convergence_criteria_frame, convergence_criteria, EarlyStopper, \
     choose_samples, pred_and_visualize, LidarSample
 from models.utils import get_model
+import argparse
+from config_parser import ConfigParser
+from tqdm import tqdm
+import wandb
 
 
 def get_error(pred_extrinsics, gt_extrinsics):
@@ -23,187 +27,206 @@ def get_error(pred_extrinsics, gt_extrinsics):
     return delta_rotation_euler
 
 
-def main_bundle_adjust():
-    camera_id = 2
+def main_bundle_adjust(config):
 
-    kitti = Kitti()
+    ## Initializing all the required parameters
+    camera_id = config.camera_id
+    sequence = config.sequence
+    rot_param_type = config.rot_param_type
+    lr = config.lr
+    num_iter = config.num_iter
+    image_labels_subsampling_factor = config.image_labels_subsampling_factor
+    depth_scaling_factor = config.depth_scaling_factor
+    sample_range = (config.sample_range["min"], config.sample_range["max"])
+    num_samples = config.num_samples
+    data_dump_dir = config.data_dump_dir
+    translation_upweighting = config.translation_upweighting
+    key_frame_id = config.key_frame_id
+    patience = config.patience
+    min_delta = config.min_delta
+    convergence_threshold = config.convergence_threshold
+    batch_sampling_type = config.batch_sampling_type
+    use_depth = config.use_depth
+
+    # Initialize logger
+    
+
+    # Visualization, Convergence (Using the same key_frame_id for both)
+    sample_to_visualize = key_frame_id
+    convergence_criteria_frame_id = key_frame_id
+
+
+    kitti = Kitti(sequence=sequence)
 
     # Get the image properties.
     image_height = kitti.height
     image_width = kitti.width
     projection_matrix = torch.from_numpy(kitti.Ps[camera_id]).float()
 
-    # Parse hyperparameters.
-    rot_param_type = 'euler'
-    lr = 1e-6
-    rotation_degrees = dict(z=5, y=5, x=5)
-    translation_meters = dict(z=0.0, y=-0.0, x=-0.0)
-    num_iter = 1000
-    image_labels_subsampling_factor = 5.
-    depth_scaling_factor = 1
-    sample_range = (0, 1)
-    num_samples = 1
-    data_dump_dir = "../data/batch_test/"
-    translation_upweighting = 0
 
-    # Visualization
-    sample_to_visualize = 0
-
-    # Convergence stuff
-    convergence_criteria_frame_id = 525
-    patience = 50
-    min_delta = 0.01
-    convergence_threshold = 0.01
 
     early_stopper = EarlyStopper(patience=patience, min_delta=min_delta, convergence_threshold=convergence_threshold)
+    logger = None
 
-    # Just get the initialized extrinsics from the projection of the first kitti sample
-    _, _, _, init_extrinsics, _ = kitti.get_rotated_projection(
-        idx=0, camera_id=camera_id, rotation_degrees=rotation_degrees,
-        translation_meters=translation_meters
-    )
-    _, _, _, gt_extrinsics, _ = kitti.get_gt_projection(idx=0, camera_id=2)
+    for j in range(len(config.noise_configs)):
+        rotation_degrees = config.noise_configs[j]["rotation_degrees"]
+        translation_meters = config.noise_configs[j]["translation"]
+        if logger is not None:
+            wandb.finish()
 
-    # Choose a particular frame as convergence criteria
-    key_lidar_data, key_lidar_labels, annotated_gt_points_dict = convergence_criteria_frame(
-        kitti, convergence_criteria_frame_id, camera_id)
+        logger = wandb.init(project="single_image_calibration", config=config.get_dict())
 
-    # Modeling components.
-    calibrator_model = get_model(init_extrinsics=init_extrinsics, rot_param_type=rot_param_type)
-    optimizer = torch.optim.SGD(calibrator_model.parameters(), lr=lr)
-    criterion = nn.MSELoss()
+        run_name =str(config.sequence) + str(config.key_frame_id) +  "Rotation: " + str(rotation_degrees) + " Translation: " + str(translation_meters)
+        logger.name = run_name
+        # logger.group = str(config.sequence) + str(config.key_frame_id)
 
-    assert num_samples < len(kitti), "Cannot get more samples than the KITTI dataset."
+        # Just get the initialized extrinsics from the projection of the first kitti sample
+        _, _, _, init_extrinsics, _ = kitti.get_rotated_projection(
+            idx=0, camera_id=camera_id, rotation_degrees=rotation_degrees,
+            translation_meters=translation_meters
+        )
+        _, _, _, gt_extrinsics, _ = kitti.get_gt_projection(idx=0, camera_id=2)
 
-    for iteration in range(num_iter):
+        # Choose a particular frame as convergence criteria
+        key_lidar_data, key_lidar_labels, annotated_gt_points_dict = convergence_criteria_frame(
+            kitti, convergence_criteria_frame_id, camera_id)
 
-        total_chamdist = 0
+        # Modeling components.
+        calibrator_model = get_model(init_extrinsics=init_extrinsics, rot_param_type=rot_param_type)
+        optimizer = torch.optim.SGD(calibrator_model.parameters(), lr=lr)
+        criterion = nn.MSELoss()
 
-        # Choose samples.
-        lidar_samples, gt_image_point_clouds, gt_images = choose_samples(sample_range,
-                                                                         num_samples,
-                                                                         kitti,
-                                                                         image_labels_subsampling_factor,
-                                                                         camera_id,
-                                                                         depth_scaling_factor)
+        assert num_samples < len(kitti), "Cannot get more samples than the KITTI dataset."
 
-        # Choose image to plot.
+        for iteration in tqdm(range(num_iter)):
 
-        for i, (lidar_sample, gt_image_point_cloud) in enumerate(zip(lidar_samples, gt_image_point_clouds)):
+            total_chamdist = 0
 
-            # Forward pass of the calibrator model
-            lidar_sample: LidarSample
-            lidar_points = torch.from_numpy(lidar_sample.lidar_points)
-            lidar_labels = torch.from_numpy(lidar_sample.lidar_labels.astype(np.int32))
+            # Choose samples.
+            lidar_samples, gt_image_point_clouds, gt_images = choose_samples(sample_range,
+                                                                            num_samples,
+                                                                            kitti,
+                                                                            image_labels_subsampling_factor,
+                                                                            camera_id,
+                                                                            depth_scaling_factor,
+                                                                            key_frame_id,
+                                                                            sampling_method=batch_sampling_type)
 
-            # Forward pass.
-            pred_point_cloud: Dict[str, torch.Tensor] = calibrator_model(lidar_data=lidar_points,
-                                                                         projection_matrix=projection_matrix,
-                                                                         image_height=image_height,
-                                                                         image_width=image_width,
-                                                                         label_data=lidar_labels,
-                                                                         add_depth=True,
-                                                                         depth_scaling_factor=depth_scaling_factor)
+            # Choose image to plot.
 
-            # Convert to Tensor.
-            gt_image_point_cloud: Dict[str, np.ndarray]
-            gt_image_point_cloud = {class_name: torch.from_numpy(arr).float()
-                                    for class_name, arr in gt_image_point_cloud.items()}
+            for i, (lidar_sample, gt_image_point_cloud) in enumerate(zip(lidar_samples, gt_image_point_clouds)):
 
-            assert sorted(LabelConfig.labels()) == sorted(pred_point_cloud.keys())
-            assert sorted(LabelConfig.labels()) == sorted(gt_image_point_cloud.keys())
+                # Forward pass of the calibrator model
+                lidar_sample: LidarSample
+                lidar_points = torch.from_numpy(lidar_sample.lidar_points)
+                lidar_labels = torch.from_numpy(lidar_sample.lidar_labels.astype(np.int32))
 
-            for class_name in LabelConfig.labels():
-                pred_points = pred_point_cloud[class_name]
-                gt_points = gt_image_point_cloud[class_name]
+                # Forward pass.
+                pred_point_cloud: Dict[str, torch.Tensor] = calibrator_model(lidar_data=lidar_points,
+                                                                            projection_matrix=projection_matrix,
+                                                                            image_height=image_height,
+                                                                            image_width=image_width,
+                                                                            label_data=lidar_labels,
+                                                                            add_depth=True,
+                                                                            depth_scaling_factor=depth_scaling_factor)
 
-                chamdist, _ = chamfer_distance(gt_points[None, :], pred_points[None, :], single_directional=False)
-                total_chamdist = total_chamdist + chamdist
+                # Convert to Tensor.
+                gt_image_point_cloud: Dict[str, np.ndarray]
+                gt_image_point_cloud = {class_name: torch.from_numpy(arr).float()
+                                        for class_name, arr in gt_image_point_cloud.items()}
 
-        # Downscale the value for numerical stability and average them per sample
-        total_chamdist = total_chamdist / DOWNSCALING_FACTOR / num_samples
+                assert sorted(LabelConfig.labels()) == sorted(pred_point_cloud.keys())
+                assert sorted(LabelConfig.labels()) == sorted(gt_image_point_cloud.keys())
 
-        # Loss function calculation.
-        loss = criterion(total_chamdist, torch.tensor(0).float())
-        optimizer.zero_grad()
-        loss.backward()
+                for class_name in LabelConfig.labels():
+                    pred_points = pred_point_cloud[class_name]
+                    gt_points = gt_image_point_cloud[class_name]
 
-        # To perform translation update.
-        for name, param in calibrator_model.named_parameters():
-            if name == 'translation_param':
-                if param.grad is not None:
-                    param.grad *= translation_upweighting
+                    chamdist, _ = chamfer_distance(pred_points[None, :], gt_points[None, :], single_directional=True)
+                    total_chamdist = total_chamdist + chamdist
 
-        optimizer.step()
+            # Downscale the value for numerical stability and average them per sample
+            total_chamdist = total_chamdist / DOWNSCALING_FACTOR / num_samples
 
-        pred_and_visualize(sample_to_visualize,
-                           kitti,
-                           calibrator_model,
-                           image_labels_subsampling_factor,
-                           camera_id,
-                           depth_scaling_factor,
-                           projection_matrix,
-                           image_height,
-                           image_width,
-                           data_dump_dir,
-                           iteration)
+            # Loss function calculation.
+            loss = criterion(total_chamdist, torch.tensor(0).float())
+            optimizer.zero_grad()
+            loss.backward()
 
-        # Visualize it on the first sample:
-        lidar_points = torch.from_numpy(kitti.load_lidar_points(0))
-        lidar_labels = torch.from_numpy(kitti.load_lidar_labels(0).astype(int))
-        gt_image_point_clouds_test = kitti.get_image_semlabels_with_depth(
-            idx=0, subsampling_factor=image_labels_subsampling_factor, camera_id=camera_id,
-            depth_scaling_factor=depth_scaling_factor)[1]
-        gt_image = kitti.load_image(idx=0, camera_id=camera_id)
-        gt_image_vis = gt_image.copy()[:, :, ::-1]
+            # To perform translation update.
+            for name, param in calibrator_model.named_parameters():
+                if name == 'translation_param':
+                    if param.grad is not None:
+                        param.grad *= translation_upweighting
 
-        pred_point_cloud: Dict[str, torch.Tensor] = calibrator_model(lidar_data=lidar_points,
-                                                                     projection_matrix=projection_matrix,
-                                                                     image_height=image_height,
-                                                                     image_width=image_width,
-                                                                     label_data=lidar_labels,
-                                                                     add_depth=True,
-                                                                     depth_scaling_factor=depth_scaling_factor)
+            optimizer.step()
+            if iteration % 100 == 0:
 
-        for class_name in LabelConfig.labels():
-            pred_points = pred_point_cloud[class_name]
-            gt_points = gt_image_point_clouds_test[class_name]
+                vis_image = pred_and_visualize(sample_to_visualize,
+                                                kitti,
+                                                calibrator_model,
+                                                image_labels_subsampling_factor,
+                                                camera_id,
+                                                depth_scaling_factor,
+                                                projection_matrix,
+                                                image_height,
+                                                image_width,
+                                                data_dump_dir,
+                                                iteration)  
+                logger.log({"visualization": wandb.Image(vis_image)})
 
-            # Draw the points on the first image.
-            pred_color = LabelConfig.color(class_name)[::-1]
-            gt_color = LabelConfig.color(class_name)
-            gt_image_vis[pred_points[:, 1].int(), pred_points[:, 0].int(), :] = np.array(pred_color)
-            gt_image_vis[gt_points[:, 1].astype(int), gt_points[:, 0].astype(int), :] = np.array(gt_color)
+            
 
-        cv2.imwrite(f'{data_dump_dir}/iteration_{iteration}.png', gt_image_vis[:, :, ::-1])
+            # print(
+            #     f"Iteration {iteration}: {loss.item()}, {calibrator_model.rot_param.data} {calibrator_model.translation_param.data}")
+            # print(f'Error translation: {torch.from_numpy(gt_extrinsics[:, 3]) - calibrator_model.translation_param.data}')
+            logger.log({"loss": loss.item()})
 
-        print(
-            f"Iteration {iteration}: {loss.item()}, {calibrator_model.rot_param.data} {calibrator_model.translation_param.data}")
-        print(f'Error translation: {torch.from_numpy(gt_extrinsics[:, 3]) - calibrator_model.translation_param.data}')
+            # Get the error
+            pred_extrinsics = calibrator_model.construct_extrinsics_matrix()
+            delta_rotation_euler = get_error(pred_extrinsics=pred_extrinsics, gt_extrinsics=gt_extrinsics)
 
-        # Get the error
-        pred_extrinsics = calibrator_model.construct_extrinsics_matrix()
-        delta_rotation_euler = get_error(pred_extrinsics=pred_extrinsics, gt_extrinsics=gt_extrinsics)
+            # Infer in convergence criteria frame.
+            error_criteria, converged = convergence_criteria(calibrator_model=calibrator_model,
+                                                            key_lidar_data=key_lidar_data,
+                                                            key_lidar_labels=key_lidar_labels,
+                                                            annotated_gt_points_dict=annotated_gt_points_dict,
+                                                            projection_matrix=projection_matrix,
+                                                            image_height=image_height,
+                                                            image_width=image_width,
+                                                            early_stopper=early_stopper)
 
-        # Infer in convergence criteria frame.
-        error_criteria, converged = convergence_criteria(calibrator_model=calibrator_model,
-                                                         key_lidar_data=key_lidar_data,
-                                                         key_lidar_labels=key_lidar_labels,
-                                                         annotated_gt_points_dict=annotated_gt_points_dict,
-                                                         projection_matrix=projection_matrix,
-                                                         image_height=image_height,
-                                                         image_width=image_width,
-                                                         early_stopper=early_stopper)
+            # print(
+            #     f"Error rotation: z: {delta_rotation_euler[0]}, y: {delta_rotation_euler[1]}, x: {delta_rotation_euler[2]}")
+            # print(f"Convergence criteria: {error_criteria}")
 
-        print(
-            f"Error rotation: z: {delta_rotation_euler[0]}, y: {delta_rotation_euler[1]}, x: {delta_rotation_euler[2]}")
-        print(f"Convergence criteria: {error_criteria}")
+            logger.log({"error_rotation_z": delta_rotation_euler[0],
+                        "error_rotation_y": delta_rotation_euler[1],
+                        "error_rotation_x": delta_rotation_euler[2],
+                        "error_translation_x": torch.from_numpy(gt_extrinsics[:, 3])[0] - calibrator_model.translation_param.data[0],
+                        "error_translation_y": torch.from_numpy(gt_extrinsics[:, 3])[1] - calibrator_model.translation_param.data[1],
+                        "error_translation_z": torch.from_numpy(gt_extrinsics[:, 3])[2] - calibrator_model.translation_param.data[2]})
 
-        if converged:
-            assert converged in [1, 2]
-            convergence_criteria_dict = {1: "Patience", 2: "Convergence threshold"}
-            raise SystemExit(f"Converged with criteria {converged}: {convergence_criteria_dict[converged]}")
+            if converged:
+                assert converged in [1, 2]
+                convergence_criteria_dict = {1: "Patience", 2: "Convergence threshold"}
+                # raise SystemExit(f"Converged with criteria {converged}: {convergence_criteria_dict[converged]}")
+                wandb.finish()
+                break
 
+
+    
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Process configuration file path')
+    parser.add_argument('--config', type=str, help='Path to the configuration file')
+    args = parser.parse_args()
+    return args
 
 if __name__ == "__main__":
-    main_bundle_adjust()
+    args = parse_args()
+    config_file_path = args.config
+    config = ConfigParser(config_file_path)
+    main_bundle_adjust(config)
+
+    # Use the config_file_path to get the parameters

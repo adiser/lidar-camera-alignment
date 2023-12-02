@@ -1,7 +1,7 @@
 import glob
 import os
 from dataclasses import dataclass
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Union
 
 import cv2
 import numpy as np
@@ -37,10 +37,10 @@ def read_calib_file(filepath):
 
 @dataclass()
 class CalibInput:
-    label_map: np.ndarray | torch.Tensor
-    pts_2d_fov: np.ndarray | torch.Tensor
-    label_fov: np.ndarray | torch.Tensor
-    tr: np.ndarray | torch.Tensor
+    label_map: Union[np.ndarray, torch.Tensor]
+    pts_2d_fov: Union[np.ndarray, torch.Tensor]
+    label_fov: Union[np.ndarray , torch.Tensor]
+    tr: Union[np.ndarray , torch.Tensor]
 
     def torch(self):
         label_map = torch.from_numpy(self.label_map)

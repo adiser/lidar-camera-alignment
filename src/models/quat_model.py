@@ -4,6 +4,7 @@ from pytorch3d.transforms import quaternion_to_matrix
 from scipy.spatial.transform import Rotation
 from torch import nn, ParameterDict
 from torch.nn import Parameter
+import cv2
 
 from utils import LabelConfig
 
@@ -44,6 +45,17 @@ class QuatCalibratorModel(nn.Module):
         extrinsics[:, :3] = R
         extrinsics[:, 3] = np.array(self.translation_param.detach().cpu())
         return extrinsics
+    
+    def get_depth_data(self, lidar_camera_coords, projection_matrix, depth_scaling_factor):
+        out = cv2.decomposeProjectionMatrix(projection_matrix.numpy())
+        intrinsics = out[0]
+        rotation = out[1]
+        translation = np.linalg.inv(projection_matrix[:3, :3].numpy()) @ projection_matrix[:3, 3].numpy()
+        extrinsics = np.hstack([rotation, translation[:,None]])
+        hom = torch.hstack([lidar_camera_coords, torch.ones(len(lidar_camera_coords), 1)])
+        depth_data = torch.matmul(hom,  torch.from_numpy(extrinsics.transpose(1,0))) * depth_scaling_factor
+        return depth_data[:, 2]
+
 
     def forward(self,
                 lidar_data,
@@ -62,8 +74,10 @@ class QuatCalibratorModel(nn.Module):
         lidar_points_hom = torch.hstack([lidar_data, torch.ones(len(lidar_data), 1)])
         lidar_points_camera_coords = lidar_points_hom @ Tr.transpose(1, 0)
 
+
         # Convert to homography coordinates
-        depth_data = lidar_points_camera_coords[:, 2] * depth_scaling_factor
+        depth_data = self.get_depth_data(lidar_points_camera_coords, projection_matrix, depth_scaling_factor)
+
 
         lidar_points_camera_coords_hom = torch.hstack([lidar_points_camera_coords,
                                                        torch.ones((len(lidar_points_camera_coords), 1))])
