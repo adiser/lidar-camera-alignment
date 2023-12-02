@@ -23,11 +23,13 @@ class LabelConfig:
     #     (71, 1192),
     # ]
 
-
     LABEL_MAP = {
         'car': 10,
         'road': 40,
-        'sidewalk': 48
+        'sidewalk': 48,
+        # 'building': 50,
+        # 'vegetation': 70,
+        # 'terrain': 72
     }
 
     data_source = '../data/Kitti/dataset/semantic-kitti.yaml'
@@ -132,7 +134,8 @@ def choose_samples(sample_range,
                    kitti,
                    image_labels_subsampling_factor,
                    camera_id,
-                   depth_scaling_factor):
+                   depth_scaling_factor,
+                   use_gt_labels: bool = False):
 
     samples = list(np.random.choice(list(range(sample_range[0], sample_range[1])), num_samples))
 
@@ -144,7 +147,7 @@ def choose_samples(sample_range,
     gt_image_point_clouds = [
         kitti.get_image_semlabels_with_depth(
             idx=i, subsampling_factor=image_labels_subsampling_factor, camera_id=camera_id,
-            depth_scaling_factor=depth_scaling_factor)[1] for i in samples
+            depth_scaling_factor=depth_scaling_factor, return_label_gt=use_gt_labels)[1] for i in samples
     ]
 
     gt_images = [

@@ -1,44 +1,28 @@
+
 import numpy as np
 import torch
-from pytorch3d.transforms import quaternion_to_matrix, matrix_to_quaternion
 from scipy.spatial.transform import Rotation
-from torch import nn, ParameterDict
+from torch import nn
 from torch.nn import Parameter
 
 from utils import LabelConfig
 
 
-class QuatCalibratorModel(nn.Module):
+class MatrixModel(nn.Module):
     def __init__(self, init_extrinsics):
 
         super().__init__()
 
         self.init_extrinsics = init_extrinsics
 
-        # Reparameterize them into 6 DOF parameter.
-
-        # # 1. Get the rotation
-        # rotation = Rotation.from_matrix(self.init_extrinsics[:, :3])
-        # # Scalar last
-        # qx, qy, qz, qw = rotation.as_quat()
-
-        quat = matrix_to_quaternion(torch.from_numpy(self.init_extrinsics[:, :3]))
-
-        # Convert to scalar first
-        self.rot_param = Parameter(torch.tensor(quat).float())
-
-        # # 2. Get the translation
-        tx, ty, tz = self.init_extrinsics[:, 3]
-        self.translation_param = Parameter(torch.tensor([tx, ty, tz]).float())
+        # 1. Get the rotation
+        self.transformation = torch.from_numpy(self.init_extrinsics)
+        self.transformation_param = Parameter(self.transformation.float())
+        self.rot_param = Parameter(self.transformation_param[:, :3].float())
+        self.translation_param = Parameter(self.transformation_param[:, 3].float())
 
     def construct_rotation_matrix(self):
-        q_normalized = self.rot_param / torch.norm(self.rot_param)
-        # q_normalized = nn.functional.normalize(self.quaternion)
-
-        # Assumes scalar first
-        R = quaternion_to_matrix(q_normalized)
-
-        return R
+        return self.rot_param
 
     def construct_extrinsics_matrix(self) -> np.ndarray:
         extrinsics = np.zeros((3, 4), dtype=np.float32)
@@ -46,6 +30,21 @@ class QuatCalibratorModel(nn.Module):
         extrinsics[:, :3] = R
         extrinsics[:, 3] = np.array(self.translation_param.detach().cpu())
         return extrinsics
+
+    def ensure_param_validity(self):
+        # Ensure the upper-left 3x3 submatrix is a proper rotation matrix
+        with torch.no_grad():
+            U, _, V = torch.linalg.svd(self.transformation_param[:3, :3])
+            R = torch.mm(U, V)
+
+            # Correct for possible reflection to ensure determinant is +1
+            if torch.det(R) < 0:
+                U[:, -1] *= -1
+                R = torch.mm(U, V)
+
+            self.transformation_param[:3, :3] = R
+            self.rot_param = Parameter(self.transformation_param[:, :3].float())
+            self.translation_param = Parameter(self.transformation_param[:, 3].float())
 
     def forward(self,
                 lidar_data,
@@ -56,9 +55,8 @@ class QuatCalibratorModel(nn.Module):
                 add_depth=True,
                 depth_scaling_factor: float = 1.):
 
-        R = self.construct_rotation_matrix()
-
-        Tr = torch.hstack([R, self.translation_param[:, None]])
+        Tr = self.transformation_param
+        # Tr = torch.hstack([self.rot_param, self.translation_param[:, None]])
 
         # Apply the extrinsics
         lidar_points_hom = torch.hstack([lidar_data, torch.ones(len(lidar_data), 1)])
@@ -94,3 +92,6 @@ class QuatCalibratorModel(nn.Module):
                 points_dict[rel_label] = pts_2d_image_coords_cart[label_data == rel_label]
 
         return points_dict
+
+
+

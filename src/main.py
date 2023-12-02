@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 
 import cv2
@@ -8,6 +9,7 @@ from scipy.spatial.transform import Rotation
 from torch import nn
 
 from calibration import Kitti
+from models.matrix_model import MatrixModel
 from utils import LabelConfig, DOWNSCALING_FACTOR, convergence_criteria_frame, convergence_criteria, EarlyStopper, \
     choose_samples, pred_and_visualize, LidarSample
 from models.utils import get_model
@@ -34,25 +36,29 @@ def main_bundle_adjust():
     projection_matrix = torch.from_numpy(kitti.Ps[camera_id]).float()
 
     # Parse hyperparameters.
-    rot_param_type = 'euler'
+    rot_param_type = 'quaternion'
     lr = 1e-6
-    rotation_degrees = dict(z=5, y=5, x=5)
+    rotation_degrees = dict(z=1.5, y=1.5, x=1.5)
     translation_meters = dict(z=0.0, y=-0.0, x=-0.0)
     num_iter = 1000
     image_labels_subsampling_factor = 5.
-    depth_scaling_factor = 1
+    depth_scaling_factor = 1.
     sample_range = (0, 1)
     num_samples = 1
-    data_dump_dir = "../data/batch_test/"
+    data_dump_dir = "../data/quaternion_gt_labels/"
     translation_upweighting = 0
+    use_gt_labels = True
+
+    if not os.path.exists(data_dump_dir):
+        os.makedirs(data_dump_dir)
 
     # Visualization
     sample_to_visualize = 0
 
     # Convergence stuff
     convergence_criteria_frame_id = 525
-    patience = 50
-    min_delta = 0.01
+    patience = 1000
+    min_delta = 0.0001
     convergence_threshold = 0.01
 
     early_stopper = EarlyStopper(patience=patience, min_delta=min_delta, convergence_threshold=convergence_threshold)
@@ -66,11 +72,11 @@ def main_bundle_adjust():
 
     # Choose a particular frame as convergence criteria
     key_lidar_data, key_lidar_labels, annotated_gt_points_dict = convergence_criteria_frame(
-        kitti, convergence_criteria_frame_id, camera_id)
+        kitti, 0, camera_id)
 
     # Modeling components.
     calibrator_model = get_model(init_extrinsics=init_extrinsics, rot_param_type=rot_param_type)
-    optimizer = torch.optim.SGD(calibrator_model.parameters(), lr=lr)
+    optimizer = torch.optim.SGD(calibrator_model.parameters(), lr=lr, momentum=0)
     criterion = nn.MSELoss()
 
     assert num_samples < len(kitti), "Cannot get more samples than the KITTI dataset."
@@ -85,7 +91,8 @@ def main_bundle_adjust():
                                                                          kitti,
                                                                          image_labels_subsampling_factor,
                                                                          camera_id,
-                                                                         depth_scaling_factor)
+                                                                         depth_scaling_factor,
+                                                                         use_gt_labels)
 
         # Choose image to plot.
 
@@ -136,25 +143,28 @@ def main_bundle_adjust():
 
         optimizer.step()
 
-        pred_and_visualize(sample_to_visualize,
-                           kitti,
-                           calibrator_model,
-                           image_labels_subsampling_factor,
-                           camera_id,
-                           depth_scaling_factor,
-                           projection_matrix,
-                           image_height,
-                           image_width,
-                           data_dump_dir,
-                           iteration)
+        # pred_and_visualize(sample_to_visualize,
+        #                    kitti,
+        #                    calibrator_model,
+        #                    image_labels_subsampling_factor,
+        #                    camera_id,
+        #                    depth_scaling_factor,
+        #                    projection_matrix,
+        #                    image_height,
+        #                    image_width,
+        #                    data_dump_dir,
+        #                    iteration)
+
+        if isinstance(calibrator_model, MatrixModel):
+            calibrator_model.ensure_param_validity()
 
         # Visualize it on the first sample:
-        lidar_points = torch.from_numpy(kitti.load_lidar_points(0))
-        lidar_labels = torch.from_numpy(kitti.load_lidar_labels(0).astype(int))
+        lidar_points = torch.from_numpy(kitti.load_lidar_points(sample_to_visualize))
+        lidar_labels = torch.from_numpy(kitti.load_lidar_labels(sample_to_visualize).astype(int))
         gt_image_point_clouds_test = kitti.get_image_semlabels_with_depth(
-            idx=0, subsampling_factor=image_labels_subsampling_factor, camera_id=camera_id,
+            idx=sample_to_visualize, subsampling_factor=image_labels_subsampling_factor, camera_id=camera_id,
             depth_scaling_factor=depth_scaling_factor)[1]
-        gt_image = kitti.load_image(idx=0, camera_id=camera_id)
+        gt_image = kitti.load_image(idx=sample_to_visualize, camera_id=camera_id)
         gt_image_vis = gt_image.copy()[:, :, ::-1]
 
         pred_point_cloud: Dict[str, torch.Tensor] = calibrator_model(lidar_data=lidar_points,

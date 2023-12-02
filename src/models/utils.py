@@ -1,5 +1,6 @@
 from models.axis_angle_model import AxisAngleModel
 from models.euler_model import EulerModel
+from models.matrix_model import MatrixModel
 from models.quat_model import QuatCalibratorModel
 
 
@@ -11,6 +12,8 @@ def get_model(init_extrinsics, rot_param_type):
         calibrator_model = EulerModel(init_extrinsics)
     elif rot_param_type == 'axis_angle':
         calibrator_model = AxisAngleModel(init_extrinsics)
+    elif rot_param_type == 'matrix':
+        calibrator_model = MatrixModel(init_extrinsics)
     else:
         raise ValueError()
 

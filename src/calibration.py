@@ -149,10 +149,16 @@ class Kitti:
                                        idx,
                                        subsampling_factor: float = 2.,
                                        camera_id: Optional[int] = 2,
-                                       depth_scaling_factor: float = 5.):
+                                       depth_scaling_factor: float = 5.,
+                                       return_label_gt: bool = False):
 
         image_semlabel_dir = os.path.join(self.sequence_folder, f'image_labels_{camera_id}')
         label_map = LabelConfig.label_map()
+
+        if return_label_gt:
+            label_img, pts_2d_fov, pts_label_fov, tr, lidar_data = self.project_semlabels(
+                idx, camera_id, rotation_degrees=None, translation_meters=None
+            )
 
         depth_image = self.get_depth(idx, camera_id, depth_scaling_factor=depth_scaling_factor)
 
@@ -160,28 +166,35 @@ class Kitti:
         gt_labels_positions_dict = dict()
         for label, label_id in label_map.items():
 
-            label_img_file = os.path.join(image_semlabel_dir, label, f'{str(idx).zfill(6)}.png')
-            if os.path.exists(label_img_file):
-                label_img = cv2.imread(label_img_file)
+            if not return_label_gt:
+                label_img_file = os.path.join(image_semlabel_dir, label, f'{str(idx).zfill(6)}.png')
+                if os.path.exists(label_img_file):
+                    label_img = cv2.imread(label_img_file)
+                else:
+                    label_img = np.zeros((depth_image.shape[0], depth_image.shape[1], 3), dtype=np.uint8)
+
+                subsampled_height = int(round(label_img.shape[0] / subsampling_factor))
+                subsampled_width = int(round(label_img.shape[1] / subsampling_factor))
+
+                # The trick to subsample is to get them from the small image.
+                label_img_subsampled = cv2.resize(label_img, (subsampled_width, subsampled_height))
+
+                # Height width to width height
+                mask_locations = np.argwhere(label_img_subsampled > 0)[:, :2][:, ::-1]
+
+                depth_val = depth_image[
+                    np.round(mask_locations[:, 1]).astype(int), np.round(mask_locations[:, 0]).astype(int)]
+                # Revert it back to its original size.
+                mask_locations = mask_locations * subsampling_factor
+
+                gt_labels_positions_dict[label_id] = mask_locations
+                gt_3d_positions_dict[label_id] = np.hstack([mask_locations, depth_val[:, None]])
             else:
-                label_img = np.zeros((depth_image.shape[0], depth_image.shape[1], 3), dtype=np.uint8)
-
-            subsampled_height = int(round(label_img.shape[0] / subsampling_factor))
-            subsampled_width = int(round(label_img.shape[1] / subsampling_factor))
-
-            # The trick to subsample is to get them from the small image.
-            label_img_subsampled = cv2.resize(label_img, (subsampled_width, subsampled_height))
-
-            # Height width to width height
-            mask_locations = np.argwhere(label_img_subsampled > 0)[:, :2][:, ::-1]
-
-            depth_val = depth_image[
-                np.round(mask_locations[:, 1]).astype(int), np.round(mask_locations[:, 0]).astype(int)]
-            # Revert it back to its original size.
-            mask_locations = mask_locations * subsampling_factor
-
-            gt_labels_positions_dict[label_id] = mask_locations
-            gt_3d_positions_dict[label_id] = np.hstack([mask_locations, depth_val[:, None]])
+                mask_locations = pts_2d_fov[pts_label_fov == label_id]
+                depth_val = depth_image[
+                    np.round(mask_locations[:, 1]).astype(int), np.round(mask_locations[:, 0]).astype(int)]
+                gt_labels_positions_dict[label_id] = mask_locations
+                gt_3d_positions_dict[label_id] = np.hstack([mask_locations, depth_val[:, None]])
 
         return gt_labels_positions_dict, gt_3d_positions_dict
 
