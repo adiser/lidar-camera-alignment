@@ -36,18 +36,18 @@ def main_bundle_adjust():
     projection_matrix = torch.from_numpy(kitti.Ps[camera_id]).float()
 
     # Parse hyperparameters.
-    rot_param_type = 'quaternion'
+    rot_param_type = 'axis_angle'
     lr = 1e-6
-    rotation_degrees = dict(z=1.5, y=1.5, x=1.5)
+    rotation_degrees = dict(z=20, y=20, x=20)
     translation_meters = dict(z=0.0, y=-0.0, x=-0.0)
     num_iter = 1000
     image_labels_subsampling_factor = 5.
-    depth_scaling_factor = 1.
+    depth_scaling_factor = 1
     sample_range = (0, 1)
     num_samples = 1
-    data_dump_dir = "../data/quaternion_gt_labels/"
+    data_dump_dir = "../data/axis_angle_model_with_single_directional_big_trans_depth_scaling_big/"
     translation_upweighting = 0
-    use_gt_labels = True
+    use_gt_labels = False
 
     if not os.path.exists(data_dump_dir):
         os.makedirs(data_dump_dir)
@@ -76,7 +76,7 @@ def main_bundle_adjust():
 
     # Modeling components.
     calibrator_model = get_model(init_extrinsics=init_extrinsics, rot_param_type=rot_param_type)
-    optimizer = torch.optim.SGD(calibrator_model.parameters(), lr=lr, momentum=0)
+    optimizer = torch.optim.SGD(calibrator_model.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
     assert num_samples < len(kitti), "Cannot get more samples than the KITTI dataset."
@@ -124,11 +124,11 @@ def main_bundle_adjust():
                 pred_points = pred_point_cloud[class_name]
                 gt_points = gt_image_point_cloud[class_name]
 
-                chamdist, _ = chamfer_distance(gt_points[None, :], pred_points[None, :], single_directional=False)
+                chamdist, _ = chamfer_distance(gt_points[None, :], pred_points[None, :], single_directional=True)
                 total_chamdist = total_chamdist + chamdist
 
         # Downscale the value for numerical stability and average them per sample
-        total_chamdist = total_chamdist / DOWNSCALING_FACTOR / num_samples
+        total_chamdist = total_chamdist / DOWNSCALING_FACTOR
 
         # Loss function calculation.
         loss = criterion(total_chamdist, torch.tensor(0).float())

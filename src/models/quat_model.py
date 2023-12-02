@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from pytorch3d.transforms import quaternion_to_matrix, matrix_to_quaternion
+from pytorch3d.transforms import quaternion_to_matrix
 from scipy.spatial.transform import Rotation
 from torch import nn, ParameterDict
 from torch.nn import Parameter
@@ -17,15 +17,13 @@ class QuatCalibratorModel(nn.Module):
 
         # Reparameterize them into 6 DOF parameter.
 
-        # # 1. Get the rotation
-        # rotation = Rotation.from_matrix(self.init_extrinsics[:, :3])
-        # # Scalar last
-        # qx, qy, qz, qw = rotation.as_quat()
-
-        quat = matrix_to_quaternion(torch.from_numpy(self.init_extrinsics[:, :3]))
+        # 1. Get the rotation
+        rotation = Rotation.from_matrix(self.init_extrinsics[:, :3])
+        # Scalar last
+        qx, qy, qz, qw = rotation.as_quat()
 
         # Convert to scalar first
-        self.rot_param = Parameter(torch.tensor(quat).float())
+        self.rot_param = Parameter(torch.tensor([qw, qx, qy, qz]).float())
 
         # # 2. Get the translation
         tx, ty, tz = self.init_extrinsics[:, 3]

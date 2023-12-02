@@ -1,0 +1,3 @@
+1e-5 learning rate
+chamfer distance single directional
+no momentum
