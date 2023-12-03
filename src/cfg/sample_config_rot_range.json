@@ -1,36 +1,11 @@
 {  
+    "experiment_type": "rot_range", 
     "project_name": "single_frame_baseline", 
     "sequence": "00",
     "camera_id": 2,
     "rot_param_type": "euler",
     "use_depth": true,
     "lr": 1e-5,
-    "noise_configs": [
-        {
-            "rotation_degrees": {
-                "x": 5,
-                "y": 5,
-                "z": 5
-            },
-            "translation": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-            }
-        },
-        {
-            "rotation_degrees": {
-                "x": 10,
-                "y": 10,
-                "z": 10
-            },
-            "translation": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-            }
-        }
-    ],
     "num_iter": 1000,
     "image_labels_subsampling_factor": 5,
     "depth_scaling_factor": 0,
@@ -47,7 +22,18 @@
     "min_delta": 0.01,
     "convergence_threshold": 0.01,
     "use_gt_labels": false,
-    "save_every_iteration": false
+    "save_every_iteration": false,
+    
+    
+    
+    "rotation_range": {
+        "min": -5,
+        "max": 5
+    },
+    "num_runs": 5,
+    "rot_seed": 1
+
+
 
 
 }

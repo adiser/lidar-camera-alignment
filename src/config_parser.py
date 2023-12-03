@@ -19,7 +19,7 @@ class ConfigParser:
 
 # Usage example
 config_parser = ConfigParser('/home/hari/Documents/CMU_masters/targetless_lidar_camera_calibration/lidar-camera-alignment/src/cfg/config.json')
-print(config_parser.rot_param_type)
-print(config_parser.use_depth)
-print(config_parser.lr)
+# print(config_parser.rot_param_type)
+# print(config_parser.use_depth)
+# print(config_parser.lr)
 # Access other variables in a similar way

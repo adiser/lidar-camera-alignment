@@ -1,4 +1,5 @@
 {  
+    "experiment_type": "baseline", 
     "project_name": "single_frame_baseline", 
     "sequence": "00",
     "camera_id": 2,
@@ -48,6 +49,5 @@
     "convergence_threshold": 0.01,
     "use_gt_labels": false,
     "save_every_iteration": false
-
 
 }
