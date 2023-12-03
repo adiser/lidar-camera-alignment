@@ -50,13 +50,12 @@ def main_bundle_adjust(config):
     batch_sampling_type = config.batch_sampling_type
     use_depth = config.use_depth
     use_gt_labels = config.use_gt_labels
-
-    # Initialize logger
     
 
     # Visualization, Convergence (Using the same key_frame_id for both)
     sample_to_visualize = key_frame_id
     convergence_criteria_frame_id = key_frame_id
+    save_every_iteration = config.save_every_iteration
 
 
     kitti = Kitti(sequence=sequence)
@@ -66,8 +65,6 @@ def main_bundle_adjust(config):
     image_width = kitti.width
     projection_matrix = torch.from_numpy(kitti.Ps[camera_id]).float()
 
-
-    early_stopper = EarlyStopper(patience=patience, min_delta=min_delta, convergence_threshold=convergence_threshold)
     logger = None
 
     for j in range(len(config.noise_configs)):
@@ -99,6 +96,12 @@ def main_bundle_adjust(config):
         criterion = nn.MSELoss()
 
         assert num_samples < len(kitti), "Cannot get more samples than the KITTI dataset."
+
+
+        min_rms_rot_error = float('inf')
+        min_error_dict = None
+        logger_summary_table = {"columns": ["rms_error", "error_rotation_z", "error_rotation_y", "error_rotation_x"],
+                                "data": None}
 
         for iteration in tqdm(range(num_iter)):
 
@@ -151,19 +154,23 @@ def main_bundle_adjust(config):
             # Downscale the value for numerical stability and average them per sample
             total_chamdist = total_chamdist / DOWNSCALING_FACTOR
 
-            # Loss function calculation.
-            loss = criterion(total_chamdist, torch.tensor(0).float())
-            optimizer.zero_grad()
-            loss.backward()
-
-            # To perform translation update.
-            for name, param in calibrator_model.named_parameters():
-                if name == 'translation_param':
-                    if param.grad is not None:
-                        param.grad *= translation_upweighting
-
-            optimizer.step()
             ## TODO : Cv2 visualization
+            image_dump_dir = os.path.join(data_dump_dir, "rotation_" + str(rotation_degrees))
+            if not os.path.exists(image_dump_dir):
+                os.makedirs(image_dump_dir)
+            if save_every_iteration:
+                vis_image = pred_and_visualize(sample_to_visualize,
+                                                kitti,
+                                                calibrator_model,
+                                                image_labels_subsampling_factor,
+                                                camera_id,
+                                                depth_scaling_factor,
+                                                projection_matrix,
+                                                image_height,
+                                                image_width,
+                                                data_dump_dir,
+                                                iteration)  
+                cv2.imwrite(os.path.join(image_dump_dir, f"{iteration}.png"), vis_image)
             if iteration % 100 == 0:
 
                 vis_image = pred_and_visualize(sample_to_visualize,
@@ -182,26 +189,14 @@ def main_bundle_adjust(config):
             if(isinstance(calibrator_model, MatrixModel)):
                 calibrator_model.ensure_param_validity()
 
-            
-
             # print(
             #     f"Iteration {iteration}: {loss.item()}, {calibrator_model.rot_param.data} {calibrator_model.translation_param.data}")
             # print(f'Error translation: {torch.from_numpy(gt_extrinsics[:, 3]) - calibrator_model.translation_param.data}')
-            logger.log({"loss": loss.item()})
 
             # Get the error
             pred_extrinsics = calibrator_model.construct_extrinsics_matrix()
             delta_rotation_euler = get_error(pred_extrinsics=pred_extrinsics, gt_extrinsics=gt_extrinsics)
 
-            # Infer in convergence criteria frame.
-            error_criteria, converged = convergence_criteria(calibrator_model=calibrator_model,
-                                                            key_lidar_data=key_lidar_data,
-                                                            key_lidar_labels=key_lidar_labels,
-                                                            annotated_gt_points_dict=annotated_gt_points_dict,
-                                                            projection_matrix=projection_matrix,
-                                                            image_height=image_height,
-                                                            image_width=image_width,
-                                                            early_stopper=early_stopper)
 
             # print(
             #     f"Error rotation: z: {delta_rotation_euler[0]}, y: {delta_rotation_euler[1]}, x: {delta_rotation_euler[2]}")
@@ -209,19 +204,34 @@ def main_bundle_adjust(config):
 
             logger.log({"error_rotation_z": delta_rotation_euler[0],
                         "error_rotation_y": delta_rotation_euler[1],
-                        "error_rotation_x": delta_rotation_euler[2],
-                        "error_translation_x": torch.from_numpy(gt_extrinsics[:, 3])[0] - calibrator_model.translation_param.data[0],
-                        "error_translation_y": torch.from_numpy(gt_extrinsics[:, 3])[1] - calibrator_model.translation_param.data[1],
-                        "error_translation_z": torch.from_numpy(gt_extrinsics[:, 3])[2] - calibrator_model.translation_param.data[2]})
+                        "error_rotation_x": delta_rotation_euler[2]})
+            
+            #Keeping track of minimum error
+            rms_rot_error = np.sqrt(np.mean(np.square(delta_rotation_euler)))
+            if rms_rot_error < min_rms_rot_error:
+                min_rms_rot_error = rms_rot_error
+                logger_summary_table["data"] = [rms_rot_error, delta_rotation_euler[0], delta_rotation_euler[1], delta_rotation_euler[2]]
+            
+            if(iteration == num_iter - 1):
+                print(logger_summary_table)
+                table = wandb.Table(data=[logger_summary_table["data"]], columns=logger_summary_table["columns"])
+                logger.log({"summary_table": table})
 
-            if converged:
-                assert converged in [1, 2]
-                convergence_criteria_dict = {1: "Patience", 2: "Convergence threshold"}
-                ## TODO Log the convergence criteria 
-                logger.summary["converged"] = convergence_criteria_dict[converged]
-                # raise SystemExit(f"Converged with criteria {converged}: {convergence_criteria_dict[converged]}")
-                wandb.finish()
-                break
+
+            # Loss function calculation.
+            loss = criterion(total_chamdist, torch.tensor(0).float())
+            optimizer.zero_grad()
+            loss.backward()
+
+            # To perform translation update.
+            for name, param in calibrator_model.named_parameters():
+                if name == 'translation_param':
+                    if param.grad is not None:
+                        param.grad *= translation_upweighting
+
+            optimizer.step()
+
+            logger.log({"loss": loss.item()})
 
 
     
