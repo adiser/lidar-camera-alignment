@@ -120,7 +120,7 @@ def convergence_criteria(calibrator_model,
         pred_points = pred_point_cloud[class_name]
         gt_points = annotated_gt_points_dict[class_name]
 
-        chamdist, _ = chamfer_distance(gt_points[None, :], pred_points[None, :], single_directional=False)
+        chamdist, _ = chamfer_distance(pred_points[None, :],gt_points[None, :], single_directional=True)
         total_chamdist = total_chamdist + chamdist
 
     total_chamdist = total_chamdist / DOWNSCALING_FACTOR
@@ -135,23 +135,30 @@ def choose_samples(sample_range,
                    image_labels_subsampling_factor,
                    camera_id,
                    depth_scaling_factor,
+                   key_frame_idx, sampling_method='random',
                    use_gt_labels: bool = False):
 
-    samples = list(np.random.choice(list(range(sample_range[0], sample_range[1])), num_samples))
+    
+    if sampling_method == 'random':
+        samples = list(np.random.choice(list(range(sample_range[0], sample_range[1])), num_samples))
+    elif sampling_method == "sequential":
+        samples = range(key_frame_idx - num_samples // 2, key_frame_idx + num_samples // 2)
+    else:
+        raise ValueError(f"Sampling method {sampling_method} not supported.")
 
     lidar_samples = [
         LidarSample(lidar_points=kitti.load_lidar_points(i),
-                    lidar_labels=kitti.load_lidar_labels(i)) for i in samples
+                    lidar_labels=kitti.load_lidar_labels(i)) for i in samples if i < len(kitti)
     ]
 
     gt_image_point_clouds = [
         kitti.get_image_semlabels_with_depth(
             idx=i, subsampling_factor=image_labels_subsampling_factor, camera_id=camera_id,
-            depth_scaling_factor=depth_scaling_factor, return_label_gt=use_gt_labels)[1] for i in samples
+            depth_scaling_factor=depth_scaling_factor, return_label_gt=use_gt_labels)[1] for i in samples if i < len(kitti)
     ]
 
     gt_images = [
-        kitti.load_image(idx=i, camera_id=camera_id) for i in samples
+        kitti.load_image(idx=i, camera_id=camera_id) for i in samples if i < len(kitti)
     ]
 
     return lidar_samples, gt_image_point_clouds, gt_images
@@ -195,7 +202,8 @@ def pred_and_visualize(idx,
         gt_image_vis[pred_points[:, 1].int(), pred_points[:, 0].int(), :] = np.array(pred_color)
         gt_image_vis[gt_points[:, 1].astype(int), gt_points[:, 0].astype(int), :] = np.array(gt_color)
 
-    cv2.imwrite(f'{data_dump_dir}/iteration_{iteration}.png', gt_image_vis[:, :, ::-1])
+    # cv2.imwrite(f'{data_dump_dir}/iteration_{iteration}.png', gt_image_vis[:, :, ::-1])
+    return gt_image_vis
 
 
 class LidarSample(NamedTuple):
