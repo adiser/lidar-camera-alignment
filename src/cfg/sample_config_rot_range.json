@@ -1,0 +1,39 @@
+{  
+    "experiment_type": "rot_range", 
+    "project_name": "single_frame_baseline", 
+    "sequence": "00",
+    "camera_id": 2,
+    "rot_param_type": "euler",
+    "use_depth": true,
+    "lr": 1e-5,
+    "num_iter": 1000,
+    "image_labels_subsampling_factor": 5,
+    "depth_scaling_factor": 0,
+    "batch_sampling_type": "sequential",
+    "sample_range": {
+        "min": 0,
+        "max": 1
+    },
+    "num_samples": 1,
+    "data_dump_dir": "../data/batch_test/",
+    "translation_upweighting": 0,
+    "key_frame_id": 0,
+    "patience": 50,
+    "min_delta": 0.01,
+    "convergence_threshold": 0.01,
+    "use_gt_labels": false,
+    "save_every_iteration": false,
+    
+    
+    
+    "rotation_range": {
+        "min": -5,
+        "max": 5
+    },
+    "num_runs": 5,
+    "rot_seed": 1
+
+
+
+
+}
