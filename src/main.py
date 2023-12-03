@@ -67,6 +67,9 @@ def main_bundle_adjust(config):
 
     logger = None
 
+    # Initialize device to be used.
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     for j in range(len(config.noise_configs)):
         rotation_degrees = config.noise_configs[j]["rotation_degrees"]
         translation_meters = config.noise_configs[j]["translation"]
@@ -102,21 +105,21 @@ def main_bundle_adjust(config):
         min_error_dict = None
         logger_summary_table = {"columns": ["rms_error", "error_rotation_z", "error_rotation_y", "error_rotation_x"],
                                 "data": None}
+        
+        # Choose samples.
+        lidar_samples, gt_image_point_clouds, gt_images = choose_samples(sample_range,
+                                                                        num_samples,
+                                                                        kitti,
+                                                                        image_labels_subsampling_factor,
+                                                                        camera_id,
+                                                                        depth_scaling_factor,
+                                                                        key_frame_id,
+                                                                        sampling_method=batch_sampling_type,
+                                                                        use_gt_labels=use_gt_labels)
 
         for iteration in tqdm(range(num_iter)):
 
             total_chamdist = 0
-
-            # Choose samples.
-            lidar_samples, gt_image_point_clouds, gt_images = choose_samples(sample_range,
-                                                                            num_samples,
-                                                                            kitti,
-                                                                            image_labels_subsampling_factor,
-                                                                            camera_id,
-                                                                            depth_scaling_factor,
-                                                                            key_frame_id,
-                                                                            sampling_method=batch_sampling_type,
-                                                                            use_gt_labels=use_gt_labels)
 
             # Choose image to plot.
 
@@ -148,7 +151,7 @@ def main_bundle_adjust(config):
                     pred_points = pred_point_cloud[class_name]
                     gt_points = gt_image_point_cloud[class_name]
 
-                    chamdist, _ = chamfer_distance(pred_points[None, :], gt_points[None, :], single_directional=True)
+                    chamdist, _ = chamfer_distance(pred_points[None, :].to(device), gt_points[None, :].to(device), single_directional=True)
                     total_chamdist = total_chamdist + chamdist
 
             # Downscale the value for numerical stability and average them per sample
@@ -219,7 +222,7 @@ def main_bundle_adjust(config):
 
 
             # Loss function calculation.
-            loss = criterion(total_chamdist, torch.tensor(0).float())
+            loss = criterion(total_chamdist, torch.tensor(0).float().to(device))
             optimizer.zero_grad()
             loss.backward()
 

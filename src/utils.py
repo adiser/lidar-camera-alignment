@@ -116,11 +116,12 @@ def convergence_criteria(calibrator_model,
                                                                  depth_scaling_factor=0)
 
     total_chamdist = 0
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     for class_name in LabelConfig.labels():
         pred_points = pred_point_cloud[class_name]
         gt_points = annotated_gt_points_dict[class_name]
 
-        chamdist, _ = chamfer_distance(pred_points[None, :],gt_points[None, :], single_directional=True)
+        chamdist, _ = chamfer_distance(pred_points[None, :].to(device),gt_points[None, :].to(device), single_directional=True)
         total_chamdist = total_chamdist + chamdist
 
     total_chamdist = total_chamdist / DOWNSCALING_FACTOR
